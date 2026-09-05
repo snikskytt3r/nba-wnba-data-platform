@@ -44,6 +44,20 @@ nba-wnba-data-platform/
 * Contiene las respuestas obtenidas desde las fuentes externas.
 * Los archivos de datos raw no se versionan en Git.
 
+#### Extraction Metadata ✅
+
+Cada archivo RAW utiliza actualmente un envelope con dos secciones:
+
+```
+RAW DOCUMENT
+│
+├── ingestion_metadata
+│
+└── source_response
+    ├── data
+    └── meta
+```
+
 ## Roadmap del Proyecto
 
 - Fase 0 — Project Foundation 
