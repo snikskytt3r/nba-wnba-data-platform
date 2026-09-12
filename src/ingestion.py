@@ -20,6 +20,9 @@ class Balldontlie():
         response = requests.get(url=self.url_balldontlie, headers=self.headers, params=query_params)
         http_status = response.status_code
         print("Request Status code:", http_status)
+        response_txt = response.text
+        print(f"Aquí comienza el txt: {response_txt}. Y aquí termina")
+        print(f"Aquí inicia el headers: {response.headers}. Y aquí termina")
         response_content = response.json()
         return response_content, http_status
 
@@ -28,8 +31,8 @@ def main():
 
     client_balldontlie = Balldontlie()
     cursor_value = None
-    start_date = '2026-01-01'
-    end_date = '2026-01-31'
+    start_date = '2025-02-01'
+    end_date = '2025-02-15'
     page_count = 1
     total_registros = 0
 
@@ -38,7 +41,7 @@ def main():
 
         data_games = games_balldontlie['data']
         registros_extraidos = len(data_games)
-        print("Cantidad de juegos detectados:", registros_extraidos)
+        print("Cantidad de juegos detectados:", registros_extraidos )
 
         if data_games:
             games_dates = [game['date'] for game in data_games if game.get('date')]
