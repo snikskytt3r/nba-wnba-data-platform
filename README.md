@@ -10,11 +10,34 @@ Actualmente el proyecto se encuentra en las primeras etapas:
 * Fase 0 - Project Foundation
 * Fase 1 - Raw Data Ingestion
 
-El primer checkpoint funcional logró extraer datos reales de NBA desde una fuente externa, conservando la respuesta completa en almacenamiento raw y se hizo la primera inspección estructural.
+La ingesta RAW de juegos NBA desde BALLDONTLIE ya permite:
+
+- Extraer datos reales desde una API externa.
+- Limitar extracciones históricas mediante start_date y end_date.
+- Navegar resultados mediante cursor-based pagination.
+- Persistir cada página como un archivo RAW independiente.
+- Conservar la respuesta original de la fuente junto con metadata técnica de ingestión.
+- Manejar rate limiting mediante información proporcionada por los headers HTTP.
+- Recuperarse de respuestas HTTP 429 y continuar desde el mismo cursor.
+
+La última prueba integral realizó una extracción histórica de aproximadamente seis meses:
+
+- 9 páginas.
+- 825 juegos.
+- Recuperación exitosa después de alcanzar el rate limit.
+
+El siguiente checkpoint es realizar Data Profiling sobre los archivos RAW generados antes de avanzar hacia un historical backfill completo.
 
 ## Data Source
 
 ### BALLDONTLIE
+
+Configuración actual:
+
+* League: NBA
+* Entity: games
+* Pagination: cursor-based
+* per_page = 100
 
 ## Repository Structure
 
@@ -37,11 +60,12 @@ nba-wnba-data-platform/
 
 `src/ingestion/`
 
-* Contiene los mecanismos responsables de comunicarse con fuentes externas y extraer datos.
+* Contiene los mecanismos responsables de comunicarse con fuentes externas y administrar el flujo de extracción.
 
 `data/raw/`
 
 * Contiene las respuestas obtenidas desde las fuentes externas.
+* Cada página extraída se almacena como un RAW independiente.
 * Los archivos de datos raw no se versionan en Git.
 
 #### Extracción Metadata
@@ -57,6 +81,33 @@ RAW DOCUMENT
     ├── data
     └── meta
 ```
+
+`ingestion_metadata`: contiene información técnica de la extracción:
+* source
+* league
+* entity
+* endpoint
+* extracted_at_utc
+* http_status_code
+* records_received
+* min_game_date
+* max_game_date
+
+`source_response`: conserva la respuesta recibida desde BALLDONTLIE sin mezclarla con la metadata interna del pipeline.
+
+## Pagination & Rate Limiting
+
+La extracción utiliza start_date y end_date para definir el rango histórico y next_cursor para recorrer todas las páginas disponibles dentro de ese rango.
+
+El cursor solamente avanza después de una respuesta exitosa. El flujo también inspecciona headers de rate limiting como:
+
+* x-ratelimit-limit
+* x-ratelimit-remaining
+* x-ratelimit-reset
+* Retry-After
+
+Cuando el rate limit se alcanza, la extracción espera el tiempo indicado por la API y posteriormente reintenta la misma request sin perder el estado de paginación.
+
 
 ## Roadmap del Proyecto
 
