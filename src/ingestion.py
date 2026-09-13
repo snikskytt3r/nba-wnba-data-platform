@@ -3,6 +3,9 @@ import json
 import os
 from pathlib import Path
 import requests
+from time import sleep
+from email.utils import parsedate_to_datetime
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -56,15 +59,22 @@ def main():
 
     client_balldontlie = Balldontlie()
     cursor_value = None
-    start_date = '2025-02-01'
-    end_date = '2025-02-15'
+    start_date = '2026-01-01'
+    end_date = '2026-06-30'
     page_count = 1
     total_registros = 0
+    retry_counts = 0
+    max_retries = 5
 
     while True:
-        games_balldontlie, status_code_response, ratelimit_remaining_header = client_balldontlie.get_games_balldontlie(cursor_value=cursor_value, start_date=start_date, end_date=end_date)
+        requested_cursor = cursor_value
+        games_balldontlie, response_metadata = client_balldontlie.get_games_balldontlie(cursor_value=cursor_value, start_date=start_date, end_date=end_date)
 
-        if ratelimit_remaining_header >= 0:
+        status_code_response = response_metadata['http_status']
+        ratelimit_remaining_header = response_metadata['ratelimit_remaining']
+
+        if status_code_response == 200:
+            retry_counts = 0
 
             data_games = games_balldontlie['data']
             registros_extraidos = len(data_games)
@@ -112,17 +122,57 @@ def main():
                 json.dump(raw_document, f, ensure_ascii=False, indent=4)
 
             print(f"\n Archivo guardado exitosamente en: {file_path}")
+            total_registros += registros_extraidos
 
             meta_data = games_balldontlie.get('meta', {})
             cursor_value = meta_data.get('next_cursor')
-
-            total_registros += registros_extraidos
 
             if not cursor_value:
                 print(f"Extracción completada. No hay más páginas. \nTotal de páginas extraídas: {page_count}.\nTotal de registros extraídos: {total_registros}")
                 break
 
             page_count += 1
+
+            if ratelimit_remaining_header == 0:
+                date_response = parsedate_to_datetime(response_metadata['date'])
+                ratelimit_reset = datetime.fromtimestamp(response_metadata['ratelimit_reset'], tz=timezone.utc)
+                time_to_wait = (date_response - ratelimit_reset).total_seconds()
+
+                if time_to_wait > 0:
+                    print(f"Rate limit alcanzado. Esperando {time_to_wait} segundos.")
+                    sleep(time_to_wait)
+
+        elif status_code_response == 429:
+            retry_after = response_metadata['retry_after']
+            retry_counts += 1
+
+            if retry_counts > max_retries:
+                print(f"Intento: {retry_counts} fallido. Se han agotado los intentos. Verificar qué está pasando.")
+                break
+
+            if retry_after is None:
+                date_response = response_metadata['date']
+                ratelimit_reset = response_metadata['ratelimit_reset']
+
+                if date_response is not None and ratelimit_reset is not None:
+                    date_response = parsedate_to_datetime(date_response)
+                    ratelimit_reset = datetime.fromtimestamp(ratelimit_reset, tz=timezone.utc)
+                    retry_after = (ratelimit_reset - date_response).total_seconds()
+                    retry_after = retry_after if retry_after > 0 else 0
+                    print(f"HTTP 429 sin Retry-After. Se utilizará x-ratelimit-reset como alternativa: {retry_after} segundos.")
+
+                else:
+                    retry_after = 120
+                    print("HTTP 429 sin Retry-After ni información suficiente de x-ratelimit-reset. Se utilizará una espera default de 120 segundos.")
+
+            print(f"Intento: {retry_counts} fallido. Esperando {retry_after} segundos para volverlo a intentar.")
+            sleep(retry_after)
+            continue
+
+
+        else:
+            print(f"Error HTTP {status_code_response}: {response_metadata.get('response_text')}")
+            break
 
 
 if __name__ == "__main__":
