@@ -2,8 +2,6 @@
 
 Proyeccto de Data Engineergin orientado a construir progresivamente un plataforma de datos para NBA y WNBA.
 
----
-
 ## Current Status
 
 Actualmente el proyecto se encuentra en las primeras etapas:

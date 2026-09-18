@@ -1,11 +1,11 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+import calendar
 import json
 import os
 from pathlib import Path
 import requests
 from time import sleep
 from email.utils import parsedate_to_datetime
-from datetime import datetime, timezone
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -52,15 +52,34 @@ class Balldontlie():
             response_metadata["response_text"] = response.text
 
         return response_content, response_metadata
-            
 
+    def generar_intervalos_mensuales(self, fecha_inicio, fecha_fin):
+        inicio = datetime.strptime(fecha_inicio, '%Y-%m-%d').date()
+        fin = datetime.strptime(fecha_fin, '%Y-%m-%d').date()
+
+        intervalos = []
+        actual_inicio = inicio
+
+        while actual_inicio <= fin:
+            _, ultimo_dia = calendar.monthrange(actual_inicio.year, actual_inicio.month)
+
+            actual_fin = actual_inicio.replace(day=ultimo_dia)
+
+            if actual_fin > fin:
+                actual_fin = fin
+
+            intervalos.append([actual_inicio, actual_fin])
+
+            actual_inicio = actual_fin + timedelta(days=1)
+
+        return intervalos
 
 def main():
 
     client_balldontlie = Balldontlie()
     cursor_value = None
-    start_date = '2026-01-01'
-    end_date = '2026-06-30'
+    inicio_temporada = '2025-10-21'
+    fin_temporada = '2026-06-13'
     page_count = 1
     total_registros = 0
     retry_counts = 0
@@ -68,7 +87,20 @@ def main():
 
     while True:
         requested_cursor = cursor_value
-        games_balldontlie, response_metadata = client_balldontlie.get_games_balldontlie(cursor_value=cursor_value, start_date=start_date, end_date=end_date)
+
+        ########### Fechas
+        intervalos = client_balldontlie.generar_intervalos_mensuales(fecha_inicio=inicio_temporada, fecha_fin=fin_temporada)
+
+        test_one = intervalos[0]
+        inicio_consulta = test_one[0].strftime("%Y-%m-%d")
+        fin_consulta = test_one[1].strftime("%Y-%m-%d")
+
+        print(f"Fecha de inicio de consulta: {inicio_consulta}, de tipo: {type(inicio_consulta)}")
+        print(f"Fecha fin de consulta: {fin_consulta}, de tipo: {type(fin_consulta)}")
+
+        #######
+
+        games_balldontlie, response_metadata = client_balldontlie.get_games_balldontlie(cursor_value=cursor_value, start_date=inicio_consulta, end_date=fin_consulta)
 
         status_code_response = response_metadata['http_status']
         ratelimit_remaining_header = response_metadata['ratelimit_remaining']
@@ -136,7 +168,7 @@ def main():
             if ratelimit_remaining_header == 0:
                 date_response = parsedate_to_datetime(response_metadata['date'])
                 ratelimit_reset = datetime.fromtimestamp(response_metadata['ratelimit_reset'], tz=timezone.utc)
-                time_to_wait = (date_response - ratelimit_reset).total_seconds()
+                time_to_wait = (ratelimit_reset - date_response).total_seconds()
 
                 if time_to_wait > 0:
                     print(f"Rate limit alcanzado. Esperando {time_to_wait} segundos.")
