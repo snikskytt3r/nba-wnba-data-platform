@@ -75,136 +75,137 @@ class Balldontlie():
         return intervalos
 
 def main():
-
     client_balldontlie = Balldontlie()
-    cursor_value = None
+
+    ## Configuración - Scope Histórico
     inicio_temporada = '2025-10-21'
     fin_temporada = '2026-06-13'
-    page_count = 1
-    total_registros = 0
-    retry_counts = 0
     max_retries = 5
 
-    while True:
-        requested_cursor = cursor_value
+    intervalos = client_balldontlie.generar_intervalos_mensuales(fecha_inicio=inicio_temporada, fecha_fin=fin_temporada)
 
-        ########### Fechas
-        intervalos = client_balldontlie.generar_intervalos_mensuales(fecha_inicio=inicio_temporada, fecha_fin=fin_temporada)
+    for intervalo in intervalos:
 
-        test_one = intervalos[0]
-        inicio_consulta = test_one[0].strftime("%Y-%m-%d")
-        fin_consulta = test_one[1].strftime("%Y-%m-%d")
+        cursor_value = None
+        page_count = 1
+        total_registros = 0
+        retry_counts = 0
 
-        print(f"Fecha de inicio de consulta: {inicio_consulta}, de tipo: {type(inicio_consulta)}")
-        print(f"Fecha fin de consulta: {fin_consulta}, de tipo: {type(fin_consulta)}")
+        inicio_consulta = intervalo[0].strftime("%Y-%m-%d")
+        fin_consulta = intervalo[1].strftime("%Y-%m-%d")
+    
+        print(f"Fecha de inicio de consulta: {inicio_consulta}.")
+        print(f"Fecha fin de consulta: {fin_consulta}.")
 
-        #######
+        while True:
 
-        games_balldontlie, response_metadata = client_balldontlie.get_games_balldontlie(cursor_value=cursor_value, start_date=inicio_consulta, end_date=fin_consulta)
+            requested_cursor = cursor_value
 
-        status_code_response = response_metadata['http_status']
-        ratelimit_remaining_header = response_metadata['ratelimit_remaining']
+            games_balldontlie, response_metadata = client_balldontlie.get_games_balldontlie(cursor_value=cursor_value, start_date=inicio_consulta, end_date=fin_consulta)
 
-        if status_code_response == 200:
-            retry_counts = 0
+            status_code_response = response_metadata['http_status']
+            ratelimit_remaining_header = response_metadata['ratelimit_remaining']
 
-            data_games = games_balldontlie['data']
-            registros_extraidos = len(data_games)
-            print("Cantidad de juegos detectados:", registros_extraidos )
+            if status_code_response == 200:
+                retry_counts = 0
 
-            if data_games:
-                games_dates = [game['date'] for game in data_games if game.get('date')]
-                min_game_date = min(games_dates) if games_dates else None
-                max_game_date = max(games_dates) if games_dates else None
+                data_games = games_balldontlie['data']
+                registros_extraidos = len(data_games)
+                print("Cantidad de juegos detectados:", registros_extraidos )
 
-            else:
-                min_game_date = None
-                max_game_date = None
-
-            extraction_datetime = datetime.now(timezone.utc)
-
-            extracted_at_utc = extraction_datetime.isoformat()
-            utc_timestamp = extraction_datetime.strftime("%Y%m%d_%H%M%S")
-
-            ingestion_metadata = {
-                "source": "balldontlie",
-                "league": "nba",
-                "entity": "games", 
-                "endpoint": client_balldontlie.url_balldontlie,
-                "extracted_at_utc": extracted_at_utc,
-                "http_status_code": status_code_response,
-                "records_received": len(data_games),
-                "min_game_date": min_game_date,
-                "max_game_date": max_game_date
-            }
-
-            raw_document = {
-                "ingestion_metadata": ingestion_metadata,
-                "source_response": games_balldontlie
-            }
-
-            root_dir = Path(__file__).resolve().parent.parent
-            output_dir = root_dir/"data"/"raw"/"balldontlie"/"nba"/"games"
-            output_dir.mkdir(parents=True, exist_ok=True)
-
-            file_name = f"games_{utc_timestamp}_page_{page_count}.json"
-            file_path = output_dir / file_name
-
-            with open(file_path, "w", encoding="utf-8") as f:
-                json.dump(raw_document, f, ensure_ascii=False, indent=4)
-
-            print(f"\n Archivo guardado exitosamente en: {file_path}")
-            total_registros += registros_extraidos
-
-            meta_data = games_balldontlie.get('meta', {})
-            cursor_value = meta_data.get('next_cursor')
-
-            if not cursor_value:
-                print(f"Extracción completada. No hay más páginas. \nTotal de páginas extraídas: {page_count}.\nTotal de registros extraídos: {total_registros}")
-                break
-
-            page_count += 1
-
-            if ratelimit_remaining_header == 0:
-                date_response = parsedate_to_datetime(response_metadata['date'])
-                ratelimit_reset = datetime.fromtimestamp(response_metadata['ratelimit_reset'], tz=timezone.utc)
-                time_to_wait = (ratelimit_reset - date_response).total_seconds()
-
-                if time_to_wait > 0:
-                    print(f"Rate limit alcanzado. Esperando {time_to_wait} segundos.")
-                    sleep(time_to_wait)
-
-        elif status_code_response == 429:
-            retry_after = response_metadata['retry_after']
-            retry_counts += 1
-
-            if retry_counts > max_retries:
-                print(f"Intento: {retry_counts} fallido. Se han agotado los intentos. Verificar qué está pasando.")
-                break
-
-            if retry_after is None:
-                date_response = response_metadata['date']
-                ratelimit_reset = response_metadata['ratelimit_reset']
-
-                if date_response is not None and ratelimit_reset is not None:
-                    date_response = parsedate_to_datetime(date_response)
-                    ratelimit_reset = datetime.fromtimestamp(ratelimit_reset, tz=timezone.utc)
-                    retry_after = (ratelimit_reset - date_response).total_seconds()
-                    retry_after = retry_after if retry_after > 0 else 0
-                    print(f"HTTP 429 sin Retry-After. Se utilizará x-ratelimit-reset como alternativa: {retry_after} segundos.")
+                if data_games:
+                    games_dates = [game['date'] for game in data_games if game.get('date')]
+                    min_game_date = min(games_dates) if games_dates else None
+                    max_game_date = max(games_dates) if games_dates else None
 
                 else:
-                    retry_after = 120
-                    print("HTTP 429 sin Retry-After ni información suficiente de x-ratelimit-reset. Se utilizará una espera default de 120 segundos.")
+                    min_game_date = None
+                    max_game_date = None
 
-            print(f"Intento: {retry_counts} fallido. Esperando {retry_after} segundos para volverlo a intentar.")
-            sleep(retry_after)
-            continue
+                extraction_datetime = datetime.now(timezone.utc)
+
+                extracted_at_utc = extraction_datetime.isoformat()
+                utc_timestamp = extraction_datetime.strftime("%Y%m%d_%H%M%S")
+
+                ingestion_metadata = {
+                    "source": "balldontlie",
+                    "league": "nba",
+                    "entity": "games", 
+                    "endpoint": client_balldontlie.url_balldontlie,
+                    "extracted_at_utc": extracted_at_utc,
+                    "http_status_code": status_code_response,
+                    "records_received": len(data_games),
+                    "min_game_date": min_game_date,
+                    "max_game_date": max_game_date
+                }
+
+                raw_document = {
+                    "ingestion_metadata": ingestion_metadata,
+                    "source_response": games_balldontlie
+                }
+
+                root_dir = Path(__file__).resolve().parent.parent
+                output_dir = root_dir/"data"/"raw"/"balldontlie"/"nba"/"games"
+                output_dir.mkdir(parents=True, exist_ok=True)
+
+                file_name = f"games_{utc_timestamp}_page_{page_count}.json"
+                file_path = output_dir / file_name
+
+                with open(file_path, "w", encoding="utf-8") as f:
+                    json.dump(raw_document, f, ensure_ascii=False, indent=4)
+
+                print(f"\n Archivo guardado exitosamente en: {file_path}")
+                total_registros += registros_extraidos
+
+                meta_data = games_balldontlie.get('meta', {})
+                cursor_value = meta_data.get('next_cursor')
+
+                if not cursor_value:
+                    print(f"Extracción completada. No hay más páginas. \nTotal de páginas extraídas: {page_count}.\nTotal de registros extraídos: {total_registros}")
+                    break
+
+                page_count += 1
+
+                if ratelimit_remaining_header == 0:
+                    date_response = parsedate_to_datetime(response_metadata['date'])
+                    ratelimit_reset = datetime.fromtimestamp(response_metadata['ratelimit_reset'], tz=timezone.utc)
+                    time_to_wait = (ratelimit_reset - date_response).total_seconds()
+
+                    if time_to_wait > 0:
+                        print(f"Rate limit alcanzado. Esperando {time_to_wait} segundos.")
+                        sleep(time_to_wait)
+
+            elif status_code_response == 429:
+                retry_after = response_metadata['retry_after']
+                retry_counts += 1
+
+                if retry_counts > max_retries:
+                    print(f"Intento: {retry_counts} fallido. Se han agotado los intentos. Verificar qué está pasando.")
+                    return
+
+                if retry_after is None:
+                    date_response = response_metadata['date']
+                    ratelimit_reset = response_metadata['ratelimit_reset']
+
+                    if date_response is not None and ratelimit_reset is not None:
+                        date_response = parsedate_to_datetime(date_response)
+                        ratelimit_reset = datetime.fromtimestamp(ratelimit_reset, tz=timezone.utc)
+                        retry_after = (ratelimit_reset - date_response).total_seconds()
+                        retry_after = retry_after if retry_after > 0 else 0
+                        print(f"HTTP 429 sin Retry-After. Se utilizará x-ratelimit-reset como alternativa: {retry_after} segundos.")
+
+                    else:
+                        retry_after = 120
+                        print("HTTP 429 sin Retry-After ni información suficiente de x-ratelimit-reset. Se utilizará una espera default de 120 segundos.")
+
+                print(f"Intento: {retry_counts} fallido. Esperando {retry_after} segundos para volverlo a intentar.")
+                sleep(retry_after)
+                continue
 
 
-        else:
-            print(f"Error HTTP {status_code_response}: {response_metadata.get('response_text')}")
-            break
+            else:
+                print(f"Error HTTP {status_code_response}: {response_metadata.get('response_text')}")
+                return
 
 
 if __name__ == "__main__":
