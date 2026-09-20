@@ -77,9 +77,9 @@ class Balldontlie():
 def main():
     client_balldontlie = Balldontlie()
 
-    ## Configuración - Scope Histórico
     inicio_temporada = '2025-10-21'
     fin_temporada = '2026-06-13'
+    season = '2025'
     max_retries = 5
 
     intervalos = client_balldontlie.generar_intervalos_mensuales(fecha_inicio=inicio_temporada, fecha_fin=fin_temporada)
@@ -98,6 +98,12 @@ def main():
         print(f"Fecha fin de consulta: {fin_consulta}.")
 
         while True:
+
+            print("Información de Ejecución")
+            print(f"Valor del cursor a usar para la request: {cursor_value}")
+            print(f"Número de la página que se usará para los registros: {page_count}")
+            print(f"Número de resgistros antes de la ejecución: {total_registros}")
+            print(f"Número de retries que se han ejecutado {retry_counts}")
 
             requested_cursor = cursor_value
 
@@ -125,7 +131,6 @@ def main():
                 extraction_datetime = datetime.now(timezone.utc)
 
                 extracted_at_utc = extraction_datetime.isoformat()
-                utc_timestamp = extraction_datetime.strftime("%Y%m%d_%H%M%S")
 
                 ingestion_metadata = {
                     "source": "balldontlie",
@@ -148,7 +153,7 @@ def main():
                 output_dir = root_dir/"data"/"raw"/"balldontlie"/"nba"/"games"
                 output_dir.mkdir(parents=True, exist_ok=True)
 
-                file_name = f"games_{utc_timestamp}_page_{page_count}.json"
+                file_name = f"games_{season}_{inicio_consulta}_{fin_consulta}_page_{page_count}.json"
                 file_path = output_dir / file_name
 
                 with open(file_path, "w", encoding="utf-8") as f:
