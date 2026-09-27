@@ -1,4 +1,4 @@
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 import calendar
 import json
 import os
@@ -54,8 +54,8 @@ class Balldontlie():
         return response_content, response_metadata
 
     def generar_intervalos_mensuales(self, fecha_inicio, fecha_fin):
-        inicio = datetime.strptime(fecha_inicio, '%Y-%m-%d').date()
-        fin = datetime.strptime(fecha_fin, '%Y-%m-%d').date()
+        inicio = fecha_inicio
+        fin = fecha_fin
 
         intervalos = []
         actual_inicio = inicio
@@ -76,13 +76,28 @@ class Balldontlie():
 
 def main():
     client_balldontlie = Balldontlie()
+    max_retries = 5
+    season = '2025'
 
+    last_completed_boundary = date(2026, 6, 13)
+    next_start_date = last_completed_boundary + timedelta(days=1)
+    current_day = datetime.today().date()
+    cutoff = current_day - timedelta(days=1)
+
+    ## Backfill
     inicio_temporada = '2025-10-21'
     fin_temporada = '2026-06-13'
-    season = '2025'
-    max_retries = 5
+    
+    
+    if next_start_date > cutoff:
+        print("No hay ejecuciones pendientes")
+        return
 
-    intervalos = client_balldontlie.generar_intervalos_mensuales(fecha_inicio=inicio_temporada, fecha_fin=fin_temporada)
+    start_date = next_start_date
+    end_date = cutoff
+
+    intervalos = client_balldontlie.generar_intervalos_mensuales(fecha_inicio=start_date, fecha_fin=end_date)
+    
 
     for intervalo in intervalos:
 
