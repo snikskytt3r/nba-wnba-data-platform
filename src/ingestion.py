@@ -78,6 +78,7 @@ def main():
     client_balldontlie = Balldontlie()
     max_retries = 5
     season = '2025'
+    units_completed = 0
 
     last_completed_boundary = date(2026, 6, 13)
     next_start_date = last_completed_boundary + timedelta(days=1)
@@ -88,7 +89,6 @@ def main():
     inicio_temporada = '2025-10-21'
     fin_temporada = '2026-06-13'
     
-    
     if next_start_date > cutoff:
         print("No hay ejecuciones pendientes")
         return
@@ -97,7 +97,7 @@ def main():
     end_date = cutoff
 
     intervalos = client_balldontlie.generar_intervalos_mensuales(fecha_inicio=start_date, fecha_fin=end_date)
-    
+    units_expected = len(intervalos)
 
     for intervalo in intervalos:
 
@@ -181,6 +181,7 @@ def main():
                 cursor_value = meta_data.get('next_cursor')
 
                 if not cursor_value:
+                    units_completed += 1
                     print(f"Extracción completada. No hay más páginas. \nTotal de páginas extraídas: {page_count}.\nTotal de registros extraídos: {total_registros}")
                     break
 
@@ -227,6 +228,9 @@ def main():
                 print(f"Error HTTP {status_code_response}: {response_metadata.get('response_text')}")
                 return
 
+    print("Units expected:", units_expected)
+    print("Units completed:", units_completed)
+    print(f"Window status: {units_expected == units_completed}")
 
 if __name__ == "__main__":
     main()
