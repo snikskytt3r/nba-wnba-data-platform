@@ -78,9 +78,13 @@ def main():
     client_balldontlie = Balldontlie()
     max_retries = 5
     season = '2025'
+
     units_completed = 0
+    total_pages_completed = 0
+    total_games_collected = 0
 
     last_completed_boundary = date(2026, 6, 13)
+    confirmed_boundary_before_execution = last_completed_boundary
     next_start_date = last_completed_boundary + timedelta(days=1)
     current_day = datetime.today().date()
     cutoff = current_day - timedelta(days=1)
@@ -91,10 +95,21 @@ def main():
     
     if next_start_date > cutoff:
         print("No hay ejecuciones pendientes")
+        print("\nResumen de ejecución")
+        print("Confirmed boundary before execution:", confirmed_boundary_before_execution)
+        print("Candidate boundary: None")
+        print("Units expected: 0")
+        print("Units completed: 0")
+        print("Pages completed: 0")
+        print("Games collected: 0")
+        print("Window status: NO-OP")
+        print("Boundary after execution:", last_completed_boundary)
         return
 
     start_date = next_start_date
     end_date = cutoff
+    candidate_boundary = end_date
+    window_success = True
 
     intervalos = client_balldontlie.generar_intervalos_mensuales(fecha_inicio=start_date, fecha_fin=end_date)
     units_expected = len(intervalos)
@@ -122,10 +137,17 @@ def main():
 
             requested_cursor = cursor_value
 
-            games_balldontlie, response_metadata = client_balldontlie.get_games_balldontlie(cursor_value=cursor_value, start_date=inicio_consulta, end_date=fin_consulta)
+            try:
+                games_balldontlie, response_metadata = client_balldontlie.get_games_balldontlie(cursor_value=cursor_value, start_date=inicio_consulta, end_date=fin_consulta)
+            except requests.RequestException as error:
+                print(f"Error durante la request: {error}")
+                window_success = False
+                break
 
             status_code_response = response_metadata['http_status']
             ratelimit_remaining_header = response_metadata['ratelimit_remaining']
+
+            print(f"HTTP status: {status_code_response}")
 
             if status_code_response == 200:
                 retry_counts = 0
@@ -144,7 +166,6 @@ def main():
                     max_game_date = None
 
                 extraction_datetime = datetime.now(timezone.utc)
-
                 extracted_at_utc = extraction_datetime.isoformat()
 
                 ingestion_metadata = {
@@ -171,11 +192,18 @@ def main():
                 file_name = f"games_{season}_{inicio_consulta}_{fin_consulta}_page_{page_count}.json"
                 file_path = output_dir / file_name
 
-                with open(file_path, "w", encoding="utf-8") as f:
-                    json.dump(raw_document, f, ensure_ascii=False, indent=4)
+                try:
+                    with open(file_path, "w", encoding="utf-8") as f:
+                        json.dump(raw_document, f, ensure_ascii=False, indent=4)
+                except (OSError, TypeError, ValueError) as error:
+                    print(f"Error al persistir el RAW: {error}")
+                    window_success = False
+                    break
 
                 print(f"\n Archivo guardado exitosamente en: {file_path}")
                 total_registros += registros_extraidos
+                total_pages_completed += 1
+                total_games_collected += registros_extraidos
 
                 meta_data = games_balldontlie.get('meta', {})
                 cursor_value = meta_data.get('next_cursor')
@@ -202,7 +230,8 @@ def main():
 
                 if retry_counts > max_retries:
                     print(f"Intento: {retry_counts} fallido. Se han agotado los intentos. Verificar qué está pasando.")
-                    return
+                    window_success = False
+                    break
 
                 if retry_after is None:
                     date_response = response_metadata['date']
@@ -223,14 +252,26 @@ def main():
                 sleep(retry_after)
                 continue
 
-
             else:
                 print(f"Error HTTP {status_code_response}: {response_metadata.get('response_text')}")
-                return
+                window_success = False
+                break
 
+        if not window_success:
+            break
+
+    if window_success:
+        last_completed_boundary = candidate_boundary
+
+    print("\nResumen de ejecución")
+    print("Confirmed boundary before execution:", confirmed_boundary_before_execution)
+    print("Candidate boundary:", candidate_boundary)
     print("Units expected:", units_expected)
     print("Units completed:", units_completed)
-    print(f"Window status: {units_expected == units_completed}")
+    print("Pages completed:", total_pages_completed)
+    print("Games collected:", total_games_collected)
+    print("Window status:", "SUCCESS" if window_success else "FAILED")
+    print("Boundary after execution:", last_completed_boundary)
 
 if __name__ == "__main__":
     main()
