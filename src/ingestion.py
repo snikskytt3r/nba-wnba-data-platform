@@ -83,18 +83,42 @@ def main():
     total_pages_completed = 0
     total_games_collected = 0
 
+    ## Backfill
+    inicio_temporada = '2025-10-21'
+    fin_temporada = '2026-06-13'
     last_completed_boundary = date(2026, 6, 13)
+
+    ## Incremental state
+    root_dir = Path(__file__).resolve().parent.parent
+    state_dir = root_dir/"state"
+    state_file = state_dir/"nba_incremental_state.json"
+    state_temp_file = state_dir/"nba_incremental_state.tmp"
+
+    if state_file.exists():
+        try:
+            with open(state_file, "r", encoding="utf-8") as f:
+                incremental_state = json.load(f)
+
+            last_completed_boundary = date.fromisoformat(incremental_state["last_completed_boundary"])
+            print("Persisted state encontrado.")
+            print("Last completed boundary:", last_completed_boundary)
+
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+            print(f"Error al leer el persisted state: {error}")
+            print(f"Revisar manualmente el archivo: {state_file}")
+            return
+    else:
+        print("No existe persisted state.")
+        print("Se utilizará el bootstrap boundary:", last_completed_boundary)
+    
     confirmed_boundary_before_execution = last_completed_boundary
     next_start_date = last_completed_boundary + timedelta(days=1)
     current_day = datetime.today().date()
     cutoff = current_day - timedelta(days=1)
-
-    ## Backfill
-    inicio_temporada = '2025-10-21'
-    fin_temporada = '2026-06-13'
     
     if next_start_date > cutoff:
         print("No hay ejecuciones pendientes")
+        print("No se realizará ninguna modificación al persisted state.")
         print("\nResumen de ejecución")
         print("Confirmed boundary before execution:", confirmed_boundary_before_execution)
         print("Candidate boundary: None")
@@ -185,7 +209,6 @@ def main():
                     "source_response": games_balldontlie
                 }
 
-                root_dir = Path(__file__).resolve().parent.parent
                 output_dir = root_dir/"data"/"raw"/"balldontlie"/"nba"/"games"
                 output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -261,7 +284,26 @@ def main():
             break
 
     if window_success:
-        last_completed_boundary = candidate_boundary
+        incremental_state = {"last_completed_boundary": candidate_boundary.isoformat()}
+
+        try:
+            state_dir.mkdir(parents=True, exist_ok=True)
+
+            with open(state_temp_file, "w", encoding="utf-8") as f:
+                json.dump(incremental_state, f, ensure_ascii=False, indent=4)
+
+            state_temp_file.replace(state_file)
+
+        except (OSError, TypeError, ValueError) as error:
+            print(f"Error al persistir el incremental state: {error}")
+            print("Confirmed boundary before execution:", last_completed_boundary)
+            print("Candidate boundary procesado exitosamente:", candidate_boundary)
+            print("El persisted state no fue actualizado. Se requiere verificación manual.")
+
+        else:
+            last_completed_boundary = candidate_boundary
+            print("Incremental state actualizado exitosamente.")
+            print("New confirmed boundary:", last_completed_boundary)
 
     print("\nResumen de ejecución")
     print("Confirmed boundary before execution:", confirmed_boundary_before_execution)
