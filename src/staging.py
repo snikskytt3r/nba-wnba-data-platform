@@ -218,7 +218,10 @@ for ruta_json in ruta_jsons.glob('*.json'):
                 errores.append(("DQ-06", "game_date, game_datetime_utc", "Sin referencia temporal válida"))
 
             if errores:
-                quarantine_data.append(game)
+                quarantine_data.append({**game, "dq_errors": [
+                    {"rule_id": regla, "field": campo, "reason": motivo}
+                    for regla, campo, motivo in errores
+                ]})
                 for regla, campo, motivo in errores:
                     incidencias_dq.append({
                         "raw_file_path": game["raw_file_path"],
@@ -290,27 +293,34 @@ for ruta_json in ruta_jsons.glob('*.json'):
 
     print(f"Leído con correctamente: {ruta_json.name}")
 
-print("Partidos leídos:", total_games)
-print("Extracted at UTC:", games_data[0]["raw_extracted_at_utc"])
-print("Tipo:", type(games_data[0]["raw_extracted_at_utc"]))
-print("Registros transformados:", len(games_data))
-print("Columnas STAGING:", len(games_data[0]))
-print("Consistencia de marcadores:", Counter(game["score_breakdown_matches_total"] for game in games_data))
+reporte_dq = {
+    "raw_records": total_games,
+    "staging_records": len(staging_data),
+    "quarantine_records": len(quarantine_data),
+    "reconciled": total_games == len(staging_data) + len(quarantine_data),
+    "records_with_warnings": registros_advertidos,
+    "critical_by_rule": dict(Counter(error["rule_id"] for error in incidencias_dq)),
+    "warnings_by_rule": dict(Counter(error["rule_id"] for error in advertencias_dq)),
+    "critical_incidents": incidencias_dq,
+    "warning_incidents": advertencias_dq
+}
 
-print("Estados:", Counter(game["game_status_state"] for game in games_data))
-print("Periodos:", Counter(game["game_period"] for game in games_data))
+if not reporte_dq["reconciled"]:
+    raise ValueError("Error de reconciliación: RAW != STAGING + QUARANTINE")
 
-conteo_ids = Counter(game["game_id"] for game in games_data if game["game_id"] is not None)
-duplicados = {game_id: cantidad for game_id, cantidad in conteo_ids.items() if cantidad > 1}
+directorio_salida = directorio_src.parent / "data" / "processed" / "nba" / "games"
+directorio_salida.mkdir(parents=True, exist_ok=True)
 
-print("Game IDs únicos:", len(conteo_ids))
-print("Game IDs repetidos:", len(duplicados))
-print("Ejemplos de duplicados:", list(duplicados.items())[:5])
-print("RAW:", total_games)
-print("STAGING:", len(staging_data))
-print("QUARANTINE:", len(quarantine_data))
-print("Incidencias críticas:", Counter(error["rule_id"] for error in incidencias_dq))
-print("Reconciliación:", total_games == len(staging_data) + len(quarantine_data))
-print("Registros con advertencias:", registros_advertidos)
-print("Advertencias por regla:", Counter(error["rule_id"] for error in advertencias_dq))
-print("Total incidencias de advertencia:", len(advertencias_dq))
+for nombre, registros_salida in (("staging", staging_data), ("quarantine", quarantine_data)):
+    registros_json = [
+        {campo: valor.isoformat() if isinstance(valor, (date, datetime)) else valor for campo, valor in registro.items()}
+        for registro in registros_salida
+    ]
+
+    with open(directorio_salida / f"{nombre}.json", "w", encoding="utf-8") as archivo:
+        json.dump(registros_json, archivo, ensure_ascii=False, indent=2, allow_nan=False)
+
+with open(directorio_salida / "dq_report.json", "w", encoding="utf-8") as archivo:
+    json.dump(reporte_dq, archivo, ensure_ascii=False, indent=2, allow_nan=False)
+
+print(f"Archivos generados en: {directorio_salida}")

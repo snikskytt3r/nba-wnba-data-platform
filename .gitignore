@@ -3,3 +3,4 @@
 data/raw/
 *.ipynb
 state/
+data/processed/
