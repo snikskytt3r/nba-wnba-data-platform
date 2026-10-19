@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from datetime import date, datetime, timezone
+from collections import Counter
 
 directorio_src = Path(__file__).parent
 
@@ -8,6 +9,22 @@ ruta_jsons = directorio_src.parent / "data" / "raw" / "balldontlie" / "nba" / "g
 
 games_data = []
 total_games = 0
+
+campos_enteros = (
+    "game_id", "season", "game_period", "home_team_id", "visitor_team_id", "home_team_score", "visitor_team_score", "home_team_q1_score", 
+    "home_team_q2_score", "home_team_q3_score", "home_team_q4_score", "visitor_team_q1_score", "visitor_team_q2_score", "visitor_team_q3_score", 
+    "visitor_team_q4_score", "home_team_ot1_score", "home_team_ot2_score", "home_team_ot3_score", "visitor_team_ot1_score", "visitor_team_ot2_score", "visitor_team_ot3_score",
+    "home_team_timeouts_remaining", "visitor_team_timeouts_remaining"
+)
+
+campos_booleanos = ("postseason", "postponed", "home_team_in_bonus", "visitor_team_in_bonus")
+
+campos_strings = (
+    "game_status", "game_status_state", "game_time_display", "nba_cup_stage",
+    "home_team_conference", "home_team_division", "home_team_city", "home_team_name", "home_team_full_name", "home_team_abbreviation",
+    "visitor_team_conference", "visitor_team_division", "visitor_team_city", "visitor_team_name", "visitor_team_full_name", "visitor_team_abbreviation"
+)
+
 
 for ruta_json in ruta_jsons.glob('*.json'):
 
@@ -137,13 +154,45 @@ for ruta_json in ruta_jsons.glob('*.json'):
             "raw_extracted_at_utc": extracted_at_utc
         }
 
-        print("Game ID:", game_staging["game_id"])
-        print("Game date:", game_staging["game_date"])
-        print("Tipo:", type(game_staging["game_date"]))
-        print("Game datetime UTC:", game_staging["game_datetime_utc"])
-        print("Tipo:", type(game_staging["game_datetime_utc"]))
-        print("Columnas generadas:", len(game_staging))
-        print("Objetos anidados:", [campo for campo, valor in game_staging.items() if isinstance(valor, (dict, list))])
+        for campo in campos_enteros:
+            valor = game_staging[campo]
+            if valor is not None and (type(valor) is not int):
+                print(f"TIPO INVÁLIDO: {campo} en {ruta_json.name}, índice {raw_record_index}: {valor!r}")
+                game_staging[campo] = None
+
+        for campo in campos_booleanos:
+            valor = game_staging[campo]
+            if valor is not None and type(valor) is not bool:
+                print(f"TIPO INVÁLIDO: {campo} en {ruta_json.name}, índice {raw_record_index}: {valor!r}")
+                game_staging[campo] = None
+
+        for campo in campos_strings:
+            valor = game_staging[campo]
+            if valor is not None and type(valor) is not str:
+                print(f"TIPO INVÁLIDO: {campo} en {ruta_json.name}, índice {raw_record_index}: {valor!r}")
+                game_staging[campo] = None
+
+
+        score_breakdown_matches_total = None
+        periodo = game_staging["game_period"]
+
+        if game_staging["game_status_state"] == "final" and type(periodo) is int and 4 <= periodo <= 7:
+            periodos = ("q1_score", "q2_score", "q3_score", "q4_score", "ot1_score", "ot2_score", "ot3_score")[:periodo]
+            comprobaciones = []
+
+            for equipo in ("home_team", "visitor_team"):
+                marcador = game_staging[f"{equipo}_score"]
+                parciales = [game_staging[f"{equipo}_{parcial}"] for parcial in periodos]
+
+                if type(marcador) is int and all(type(valor) is int for valor in parciales):
+                    comprobaciones.append(marcador == sum(parciales))
+
+            if False in comprobaciones:
+                score_breakdown_matches_total = False
+            elif len(comprobaciones) == 2:
+                score_breakdown_matches_total = True
+
+        game_staging["score_breakdown_matches_total"] = score_breakdown_matches_total
             
         games_data.append(game_staging)
 
@@ -153,3 +202,15 @@ print("Partidos leídos:", total_games)
 print("Extracted at UTC:", games_data[0]["raw_extracted_at_utc"])
 print("Tipo:", type(games_data[0]["raw_extracted_at_utc"]))
 print("Registros transformados:", len(games_data))
+print("Columnas STAGING:", len(games_data[0]))
+print("Consistencia de marcadores:", Counter(game["score_breakdown_matches_total"] for game in games_data))
+
+print("Estados:", Counter(game["game_status_state"] for game in games_data))
+print("Periodos:", Counter(game["game_period"] for game in games_data))
+
+conteo_ids = Counter(game["game_id"] for game in games_data if game["game_id"] is not None)
+duplicados = {game_id: cantidad for game_id, cantidad in conteo_ids.items() if cantidad > 1}
+
+print("Game IDs únicos:", len(conteo_ids))
+print("Game IDs repetidos:", len(duplicados))
+print("Ejemplos de duplicados:", list(duplicados.items())[:5])
