@@ -196,6 +196,98 @@ for ruta_json in ruta_jsons.glob('*.json'):
             
         games_data.append(game_staging)
 
+        conteo_ids = Counter(game["game_id"] for game in games_data if game["game_id"] is not None)
+
+        staging_data = []
+        quarantine_data = []
+        incidencias_dq = []
+
+        for game in games_data:
+            errores = []
+            game_id = game["game_id"]
+
+            if game_id is None or type(game_id) is not int or not -(2**63) <= game_id < 2**63:
+                errores.append(("DQ-02", "game_id", "Identificador ausente o inválido"))
+            elif conteo_ids[game_id] > 1:
+                errores.append(("DQ-03", "game_id", "Identificador duplicado"))
+
+            if game["home_team_id"] is not None and game["visitor_team_id"] is not None and game["home_team_id"] == game["visitor_team_id"]:
+                errores.append(("DQ-05", "home_team_id, visitor_team_id", "Ambos equipos tienen el mismo identificador"))
+
+            if game["game_date"] is None and game["game_datetime_utc"] is None:
+                errores.append(("DQ-06", "game_date, game_datetime_utc", "Sin referencia temporal válida"))
+
+            if errores:
+                quarantine_data.append(game)
+                for regla, campo, motivo in errores:
+                    incidencias_dq.append({
+                        "raw_file_path": game["raw_file_path"],
+                        "raw_record_index": game["raw_record_index"],
+                        "game_id": game_id,
+                        "rule_id": regla,
+                        "field": campo,
+                        "reason": motivo
+                    })
+            else:
+                staging_data.append(game)
+
+        advertencias_dq = []
+        registros_advertidos = 0
+
+        estados_validos = ("scheduled", "in_progress", "final", "postponed", "canceled", "delayed", "suspended", "abandoned", "unknown")
+
+        for game in staging_data:
+            advertencias = []
+
+            if game["game_status_state"] == "final":
+                for campo in ("home_team_score", "visitor_team_score"):
+                    valor = game[campo]
+                    if type(valor) is not int or valor < 0:
+                        advertencias.append(("DQ-01", campo, "Marcador final ausente, inválido o negativo"))
+
+            for campo in ("home_team_id", "visitor_team_id"):
+                if game[campo] is None:
+                    advertencias.append(("DQ-04", campo, "Identificador de equipo ausente o inválido"))
+
+            if game["game_status_state"] == "final" and game["score_breakdown_matches_total"] is not True:
+                periodo = game["game_period"]
+
+                if type(periodo) is int and 4 <= periodo <= 7:
+                    periodos = ("q1_score", "q2_score", "q3_score", "q4_score", "ot1_score", "ot2_score", "ot3_score")[:periodo]
+
+                    for equipo in ("home_team", "visitor_team"):
+                        marcador = game[f"{equipo}_score"]
+                        parciales = [game[f"{equipo}_{parcial}"] for parcial in periodos]
+
+                        if type(marcador) is int and all(type(valor) is int for valor in parciales):
+                            if marcador != sum(parciales):
+                                advertencias.append(("DQ-07", equipo, "El marcador no coincide con la suma de periodos"))
+                        else:
+                            advertencias.append(("DQ-07", equipo, "Información insuficiente para verificar marcadores"))
+                else:
+                    advertencias.append(("DQ-07", "game_period", "Periodo inválido o insuficiente para verificar marcadores"))
+
+            if game["game_status_state"] not in estados_validos:
+                advertencias.append(("DQ-08", "game_status_state", "Estado ausente o no reconocido"))
+            elif game["game_status_state"] == "unknown":
+                advertencias.append(("DQ-08", "game_status_state", "Estado indeterminado"))
+
+            if (game["game_date"] is None) != (game["game_datetime_utc"] is None):
+                advertencias.append(("DQ-06", "game_date, game_datetime_utc", "Solo una referencia temporal válida"))
+
+            if advertencias:
+                registros_advertidos += 1
+
+            for regla, campo, motivo in advertencias:
+                advertencias_dq.append({
+                    "raw_file_path": game["raw_file_path"],
+                    "raw_record_index": game["raw_record_index"],
+                    "game_id": game["game_id"],
+                    "rule_id": regla,
+                    "field": campo,
+                    "reason": motivo
+                })
+
     print(f"Leído con correctamente: {ruta_json.name}")
 
 print("Partidos leídos:", total_games)
@@ -214,3 +306,11 @@ duplicados = {game_id: cantidad for game_id, cantidad in conteo_ids.items() if c
 print("Game IDs únicos:", len(conteo_ids))
 print("Game IDs repetidos:", len(duplicados))
 print("Ejemplos de duplicados:", list(duplicados.items())[:5])
+print("RAW:", total_games)
+print("STAGING:", len(staging_data))
+print("QUARANTINE:", len(quarantine_data))
+print("Incidencias críticas:", Counter(error["rule_id"] for error in incidencias_dq))
+print("Reconciliación:", total_games == len(staging_data) + len(quarantine_data))
+print("Registros con advertencias:", registros_advertidos)
+print("Advertencias por regla:", Counter(error["rule_id"] for error in advertencias_dq))
+print("Total incidencias de advertencia:", len(advertencias_dq))
