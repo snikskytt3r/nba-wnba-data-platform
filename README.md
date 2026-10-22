@@ -8,6 +8,7 @@ Actualmente el proyecto tiene cerradas:
 
 * Fase 0 - Project Foundation ✅
 * Fase 1 - Raw Data Ingestion ✅
+* Fase 2 - Data Quality & Staging ✅
 
 La Fase 1 cubre exclusivamente:
 
@@ -53,13 +54,20 @@ nba-data-platform/
 |   ├── balldontlie.py
 |   ├── extraction_scope.py
 |   ├── raw_storage.py
-|   └── state_storage.py
+|   ├── state_storage.py
+|   └── staging.py
 |
 ├── data/
-|   └── raw/
-|       └── balldontlie/
-|           └── nba/
-|               └── games/
+|   ├── raw/
+|   |   └── balldontlie/
+|   |       └── nba/
+|   |           └── games/
+|   └── processed/
+|       └── nba/
+|           └── games/
+|               ├── staging.json
+|               ├── quarantine.json
+|               └── dq_report.json
 |
 ├── state/
 |   └── nba_incremental_state.json
@@ -92,11 +100,20 @@ nba-data-platform/
 * Lee y persiste el incremental state.
 * Conoce cómo persistir el state; `ingestion.py` decide cuándo hacerlo.
 
+`staging.py`
+- Lee los archivos RAW, aplana los games y normaliza los tipos de datos.
+- Aplica las reglas DQ-01 a DQ-08, clasifica registros en STAGING o QUARANTINE y genera el reporte de validación.
+- Verifica la reconciliación y persiste los resultados procesados
+
 `data/raw/`
 
 * Contiene las respuestas obtenidas desde la fuente.
 * Cada página extraída se almacena como un RAW independiente.
 * Los archivos RAW no se versionan en Git.
+
+`data/processed/nba/games/`
+- Contiene `staging.json`, `quarantine.json` y `dq_report.json`.
+- Los resultados se generan a partir de los RAW disponibles y se sobrescriben en cada ejecución.
 
 ## RAW Data Contract
 
@@ -128,7 +145,7 @@ RAW DOCUMENT
 
 Cada record dentro de `source_response.data` representa un game.
 
-Naming actual:
+**Naming actual:**
 
 ```text
 games_{season}_{start_date}_{end_date}_page_{page_count}.json
@@ -194,6 +211,35 @@ Cuando se recibe HTTP 429, la extracción utiliza `Retry-After` cuando está dis
 
 También existe una espera preventiva cuando una respuesta exitosa informa que el rate limit disponible llegó a cero.
 
+## STAGING Data Contract
+La Fase 2 cubre exclusivamente NBA games de BALLDONTLIE y utiliza `src/staging.py` para transformar los archivos RAW.
+
+El contrato STAGING v1.0 establece una fila por game con 49 columnas:
+- 45 atributos de la fuente, incluyendo el aplanamiento de `home_team` y `visitor_team`.
+- 3 campos de provenance: `raw_file_path`, `raw_record_index` y `raw_extracted_at_utc`.
+- 1 indicador: `score_breakdown_matches_total`.
+Se normalizan DATE, TIMESTAMP UTC, INTEGER, BOOLEAN y STRING. Los valores incompatibles se reportan y se representan como `None` cuando corresponde, conservando el documento RAW original.
+
+`score_breakdown_matches_total` compara los marcadores finales contra la suma de cuartos y tiempos extra aplicables. Puede ser `True`, `False` o `None` cuando no existe información suficiente.
+
+## Data Quality & Reconciliation
+Las reglas del Data Quality Contract v1.0 se dividen en:
+- DQ-02: game_id ausente o inválido — QUARANTINE.
+- DQ-03: game_id duplicado — todas las ocurrencias a QUARANTINE.
+- DQ-05: identificadores válidos de equipos iguales — QUARANTINE.
+- DQ-06: ambas referencias temporales inválidas — QUARANTINE; sólo una válida — WARNING.
+- DQ-01: marcador final ausente, inválido o negativo — WARNING.
+- DQ-04: identificador de equipo ausente o inválido — WARNING.
+- DQ-07: marcadores inconsistentes o información insuficiente — WARNING.
+- DQ-08: estado ausente, no reconocido o unknown — WARNING.
+Los registros con advertencias permanecen en STAGING. Los registros rechazados se conservan en QUARANTINE con sus motivos mediante dq_errors.
+
+El procesamiento genera:
+- `staging.json`: registros aceptados con 49 columnas.
+- `quarantine.json`: registros rechazados y motivos de error.
+- `dq_report.json`: conteos, incidencias por regla, advertencias y resultado de reconciliación.
+La reconciliación verifica `RAW = STAGING + QUARANTINE` y compara las referencias `raw_file_path` + `raw_record_index` para detectar pérdidas o duplicaciones de registros.
+
 ## Known Limitations
 
 Updates & Safe Re-execution permanece. No están resueltos todavía:
@@ -213,11 +259,13 @@ El naming actual puede provocar overwrite si se vuelve a ejecutar exactamente la
 * end_date;
 * page number.
 
+La integración del Staging como parte del flujo principal queda pendiente porque en este momento se ejecutan de manera separada.
+
 ## Roadmap del Proyecto
 
 - Fase 0 — Project Foundation ✅
 - Fase 1 — Raw Data Ingestion ✅
-- Fase 2 — Data Quality & Staging
+- Fase 2 — Data Quality & Staging ✅
 - Fase 3 — GCP Infrastructure
 - Fase 4 — Data Warehouse
 - Fase 5 — SQL Analytics Layer

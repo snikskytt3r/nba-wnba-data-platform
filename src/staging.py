@@ -308,6 +308,21 @@ reporte_dq = {
 if not reporte_dq["reconciled"]:
     raise ValueError("Error de reconciliación: RAW != STAGING + QUARANTINE")
 
+referencias_raw = Counter((game["raw_file_path"], game["raw_record_index"]) for game in games_data)
+referencias_salida = Counter((game["raw_file_path"], game["raw_record_index"]) for game in staging_data + quarantine_data)
+
+if referencias_raw != referencias_salida:
+    raise ValueError("Error de reconciliación: existen registros RAW sin destino o duplicados.")
+
+if any(cantidad != 1 for cantidad in referencias_raw.values()):
+    raise ValueError("Error de reconciliación: provenance duplicada en RAW.")
+
+if any(len(game) != 49 for game in staging_data):
+    raise ValueError("Error de contrato: STAGING debe contener 49 columnas.")
+
+print("Reconciliación por provenance: OK")
+print("Registros reconciliados:", len(referencias_salida))
+
 directorio_salida = directorio_src.parent / "data" / "processed" / "nba" / "games"
 directorio_salida.mkdir(parents=True, exist_ok=True)
 
