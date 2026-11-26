@@ -240,6 +240,15 @@ El procesamiento genera:
 - `dq_report.json`: conteos, incidencias por regla, advertencias y resultado de reconciliación.
 La reconciliación verifica `RAW = STAGING + QUARANTINE` y compara las referencias `raw_file_path` + `raw_record_index` para detectar pérdidas o duplicaciones de registros.
 
+## Data Isolation & Testing
+
+Información extraída para el procesado y escritura en nuestra fuente productiva y la data de pruebas están almacenadas de forma independiente, permitiendo poder separar los escenarios prueba de la ejecución productiva.
+
+- `data/raw/`: Data productiva extraida de API
+- `data/processed/`: Data generada por la pipeline.
+- `state/`: Checkpoints referenciales para el incremento de la ingesta de información.
+- `tests/fixtures/`: Data para pruebas controladas.
+
 ## Known Limitations
 
 Updates & Safe Re-execution permanece. No están resueltos todavía:

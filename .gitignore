@@ -4,3 +4,6 @@ data/raw/
 *.ipynb
 state/
 data/processed/
+__pycache__/
+*.pyc
+.pytest_cache/
