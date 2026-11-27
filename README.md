@@ -1,6 +1,6 @@
 # NBA & WNBA Data Project
 
-Proyeccto de Data Engineergin orientado a construir progresivamente un plataforma de datos para NBA y WNBA.
+Proyecto de Data Engineergin orientado a construir progresivamente un plataforma de datos para NBA y WNBA, destinada al procesamiento, almacenamiento y análisis de información deportiva, así como al desarrollo y evaluación de modelos predictivos de resultados.
 
 ## Current Status
 
@@ -68,6 +68,12 @@ nba-data-platform/
 |               ├── staging.json
 |               ├── quarantine.json
 |               └── dq_report.json
+|
+├── tests/
+│   ├── fixtures/
+│   │   └── nba/
+│   │       └── nba_dq_pruebas_controladas.json
+│   └── test_extraction_scope.py
 |
 ├── state/
 |   └── nba_incremental_state.json
@@ -242,12 +248,18 @@ La reconciliación verifica `RAW = STAGING + QUARANTINE` y compara las referenci
 
 ## Data Isolation & Testing
 
-Información extraída para el procesado y escritura en nuestra fuente productiva y la data de pruebas están almacenadas de forma independiente, permitiendo poder separar los escenarios prueba de la ejecución productiva.
+Los datos operativos y los datos de prueba se almacenan de forma independiente, evitando que los escenarios de pruebas interfieran con la ejecución productiva del pipeline.
 
-- `data/raw/`: Data productiva extraida de API
-- `data/processed/`: Data generada por la pipeline.
-- `state/`: Checkpoints referenciales para el incremento de la ingesta de información.
-- `tests/fixtures/`: Data para pruebas controladas.
+- `data/raw/`: Datos originales extraídos de la API.
+- `data/processed/`: Datos generados por el procesamiento del pipeline.
+- `state/`: Checkpoints para el control de la ingesta incremental.
+- `tests/fixtures/`: Datos utilizados para pruebas controladas y reproducibles.
+
+## Automated Testing
+
+Se utiliza Pytest como framework para la ejecución de pruebas automatizadas.
+
+La cobertura de pruebas se ampliará progresivamente conforme se robustezcan los componentes del pipeline.
 
 ## Known Limitations
 
